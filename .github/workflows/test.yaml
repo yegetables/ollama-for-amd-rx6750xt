@@ -16,6 +16,7 @@ on:
       - '**/*'
       - '!docs/**'
       - '!README.md'
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   changes:

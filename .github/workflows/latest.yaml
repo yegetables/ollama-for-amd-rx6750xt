@@ -3,6 +3,7 @@ name: latest
 on:
   release:
     types: [released]
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   update-latest:
