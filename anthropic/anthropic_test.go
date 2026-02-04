@@ -605,7 +605,7 @@ func TestGenerateMessageID(t *testing.T) {
 }
 
 func TestStreamConverter_Basic(t *testing.T) {
-	conv := NewStreamConverter("msg_123", "test-model")
+	conv := NewStreamConverter("msg_123", "test-model", 0)
 
 	// First chunk
 	resp1 := api.ChatResponse{
@@ -642,7 +642,7 @@ func TestStreamConverter_Basic(t *testing.T) {
 		},
 		Done:       true,
 		DoneReason: "stop",
-		Metrics:    api.Metrics{EvalCount: 5},
+		Metrics:    api.Metrics{PromptEvalCount: 10, EvalCount: 5},
 	}
 
 	events2 := conv.Process(resp2)
@@ -650,6 +650,24 @@ func TestStreamConverter_Basic(t *testing.T) {
 	// Should have content_block_delta, content_block_stop, message_delta, message_stop
 	hasStop := false
 	for _, e := range events2 {
+		if e.Event == "message_delta" {
+			if data, ok := e.Data.(MessageDeltaEvent); ok {
+				if data.Type != "message_delta" {
+					t.Errorf("unexpected data type: %+v", data)
+				}
+
+				if data.Delta.StopReason != "end_turn" {
+					t.Errorf("unexpected stop reason: %+v", data.Delta.StopReason)
+				}
+
+				if data.Usage.InputTokens != 10 || data.Usage.OutputTokens != 5 {
+					t.Errorf("unexpected usage: %+v", data.Usage)
+				}
+			} else {
+				t.Errorf("unexpected data: %+v", e.Data)
+			}
+		}
+
 		if e.Event == "message_stop" {
 			hasStop = true
 		}
@@ -660,7 +678,7 @@ func TestStreamConverter_Basic(t *testing.T) {
 }
 
 func TestStreamConverter_WithToolCalls(t *testing.T) {
-	conv := NewStreamConverter("msg_123", "test-model")
+	conv := NewStreamConverter("msg_123", "test-model", 0)
 
 	resp := api.ChatResponse{
 		Model: "test-model",
@@ -713,7 +731,7 @@ func TestStreamConverter_WithToolCalls(t *testing.T) {
 func TestStreamConverter_ToolCallWithUnmarshalableArgs(t *testing.T) {
 	// Test that unmarshalable arguments (like channels) are handled gracefully
 	// and don't cause a panic or corrupt stream
-	conv := NewStreamConverter("msg_123", "test-model")
+	conv := NewStreamConverter("msg_123", "test-model", 0)
 
 	// Create a channel which cannot be JSON marshaled
 	unmarshalable := make(chan int)
@@ -760,7 +778,7 @@ func TestStreamConverter_ToolCallWithUnmarshalableArgs(t *testing.T) {
 
 func TestStreamConverter_MultipleToolCallsWithMixedValidity(t *testing.T) {
 	// Test that valid tool calls still work when mixed with invalid ones
-	conv := NewStreamConverter("msg_123", "test-model")
+	conv := NewStreamConverter("msg_123", "test-model", 0)
 
 	unmarshalable := make(chan int)
 	badArgs := api.NewToolCallFunctionArguments()
@@ -885,7 +903,7 @@ func TestContentBlockJSON_EmptyFieldsPresent(t *testing.T) {
 // events include the required empty fields for SDK compatibility.
 func TestStreamConverter_ContentBlockStartIncludesEmptyFields(t *testing.T) {
 	t.Run("text block start includes empty text", func(t *testing.T) {
-		conv := NewStreamConverter("msg_123", "test-model")
+		conv := NewStreamConverter("msg_123", "test-model", 0)
 
 		resp := api.ChatResponse{
 			Model:   "test-model",
@@ -919,7 +937,7 @@ func TestStreamConverter_ContentBlockStartIncludesEmptyFields(t *testing.T) {
 	})
 
 	t.Run("thinking block start includes empty thinking", func(t *testing.T) {
-		conv := NewStreamConverter("msg_123", "test-model")
+		conv := NewStreamConverter("msg_123", "test-model", 0)
 
 		resp := api.ChatResponse{
 			Model:   "test-model",

@@ -29,12 +29,14 @@ import (
 	"github.com/containerd/console"
 	"github.com/mattn/go-runewidth"
 	"github.com/olekukonko/tablewriter"
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/term"
 
 	"github.com/ollama/ollama/api"
+	"github.com/ollama/ollama/cmd/config"
 	"github.com/ollama/ollama/envconfig"
 	"github.com/ollama/ollama/format"
 	"github.com/ollama/ollama/parser"
@@ -51,7 +53,7 @@ import (
 	"github.com/ollama/ollama/x/imagegen"
 )
 
-const ConnectInstructions = "To sign in, navigate to:\n    %s\n\n"
+const ConnectInstructions = "If your browser did not open, navigate to:\n    %s\n\n"
 
 // ensureThinkingSupport emits a warning if the model does not advertise thinking support
 func ensureThinkingSupport(ctx context.Context, client *api.Client, name string) {
@@ -600,7 +602,7 @@ func RunHandler(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check if this is an image generation model
-	if slices.Contains(info.Capabilities, model.CapabilityImageGeneration) {
+	if slices.Contains(info.Capabilities, model.CapabilityImage) {
 		if opts.Prompt == "" && !interactive {
 			return errors.New("image generation models require a prompt. Usage: ollama run " + name + " \"your prompt here\"")
 		}
@@ -662,6 +664,7 @@ func SigninHandler(cmd *cobra.Command, args []string) error {
 			fmt.Println()
 
 			if aErr.SigninURL != "" {
+				_ = browser.OpenURL(aErr.SigninURL)
 				fmt.Printf(ConnectInstructions, aErr.SigninURL)
 			}
 			return nil
@@ -899,11 +902,11 @@ func DeleteHandler(cmd *cobra.Command, args []string) error {
 	for _, arg := range args {
 		// Unload the model if it's running before deletion
 		if err := loadOrUnloadModel(cmd, &runOptions{
-			Model:     args[0],
+			Model:     arg,
 			KeepAlive: &api.Duration{Duration: 0},
 		}); err != nil {
 			if !strings.Contains(strings.ToLower(err.Error()), "not found") {
-				fmt.Fprintf(os.Stderr, "Warning: unable to stop model '%s'\n", args[0])
+				fmt.Fprintf(os.Stderr, "Warning: unable to stop model '%s'\n", arg)
 			}
 		}
 
@@ -1018,8 +1021,10 @@ func showInfo(resp *api.ShowResponse, verbose bool, w io.Writer) error {
 		}
 
 		if resp.ModelInfo != nil {
-			arch := resp.ModelInfo["general.architecture"].(string)
-			rows = append(rows, []string{"", "architecture", arch})
+			arch, _ := resp.ModelInfo["general.architecture"].(string)
+			if arch != "" {
+				rows = append(rows, []string{"", "architecture", arch})
+			}
 
 			var paramStr string
 			if resp.Details.ParameterSize != "" {
@@ -1029,7 +1034,9 @@ func showInfo(resp *api.ShowResponse, verbose bool, w io.Writer) error {
 					paramStr = format.HumanNumber(uint64(f))
 				}
 			}
-			rows = append(rows, []string{"", "parameters", paramStr})
+			if paramStr != "" {
+				rows = append(rows, []string{"", "parameters", paramStr})
+			}
 
 			if v, ok := resp.ModelInfo[fmt.Sprintf("%s.context_length", arch)]; ok {
 				if f, ok := v.(float64); ok {
@@ -1883,7 +1890,7 @@ func NewCLI() *cobra.Command {
 	serveCmd := &cobra.Command{
 		Use:     "serve",
 		Aliases: []string{"start"},
-		Short:   "Start ollama",
+		Short:   "Start Ollama",
 		Args:    cobra.ExactArgs(0),
 		RunE:    RunServer,
 	}
@@ -1985,6 +1992,7 @@ func NewCLI() *cobra.Command {
 	} {
 		switch cmd {
 		case runCmd:
+			imagegen.AppendFlagsDocs(cmd)
 			appendEnvDocs(cmd, []envconfig.EnvVar{envVars["OLLAMA_HOST"], envVars["OLLAMA_NOHISTORY"]})
 		case serveCmd:
 			appendEnvDocs(cmd, []envconfig.EnvVar{
@@ -2025,6 +2033,7 @@ func NewCLI() *cobra.Command {
 		copyCmd,
 		deleteCmd,
 		runnerCmd,
+		config.LaunchCmd(checkServerHeartbeat),
 	)
 
 	return rootCmd
